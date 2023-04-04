@@ -1,0 +1,44 @@
+- Kloonaa ArabicNER-repositorio (https://github.com/SinaLab/ArabicNER) 
+haluttuun sijaintiin:
+
+git clone git@github.com:SinaLab/ArabicNER.git
+
+- Luo sovellukselle oma virtuaaliympäristö. Esim. conda-ympäristön voi luoda komennolla
+conda create -n arabicner_env python=3.10
+
+-Aktivoi virtuaaliympäristö:
+conda activate arabicner_env
+
+-Asenna riippuvuudet requirements.txt -tiedostosta (repositoriossa on myös mukana environment.yaml -tiedosto jossa on tekijöiden pitempi listaus 
+riippuvuuksista, mutta itselläni oli ongelmia ei-yhteensopivien riippuvuuksien kanssa):
+
+pip install -r requirements.txt
+
+-Aseta pythonpath-muuttujaan ArabicNER-kansion sijainti
+
+export PYTHONPATH=PYTHONPATH:path/to/ArabicNER
+
+-Excel-muotoisen datan muuttaminen mallin 'hyväksymään' conll-muotoon:
+excel_to_conll.py-koodi muuttaa excel-tiedostot conll-muotoiseksi tekstitiedostoksi. Oletuksena on, 
+että excelin ensimmäinen sarake sisältää sanan (token), toinen sarake (ensisijaisen) NER-tagin ja 
+kolmas sarake mahdolliset sisäkkäiset NER-tagit. Jos input-tiedostot sijaitsevat kansiossa 
+'data/excels/' ja output-tiedosto tallennetaan kansioon 'data/conll/' nimellä 'conll_data.txt', 
+voi koodin ajaa komennolla
+
+python excel_to_conll.py --input_path data/excels/ --output_path data/conll/conll_data.txt
+
+-Train/val/test-datatiedostojen luominen
+Mene kansioon 'ArabicNER/arabiner/bin/'. Jos datan sisältävä conll-muotoinen tiedosto on sijainnissa
+data/conll/conll_data.txt, output-tiedostot (3 kpl) halutaan kansioon 'data/tr_val_test/' ja
+train/val/test-datan määräsuhteet ovat 0.8/0.1/0.1, saadaan tiedostot luotua komennolla 
+
+python process.py --task train_dev_test_split --input_files data/conll/conll_data.txt --output_path data/tr_val_test/ --train_ratio 0.8 --dev_ratio 0.1
+
+-Mallin treenaus:
+Mallin treenausta koordinoiva train.py-tiedosto sijaitsee kansiossa 'ArabicNER/arabiner/bin/'. 
+Yllä mainitus kolmen datatiedoston sijainnit määritellään parametreissa --train_path,
+--val_path ja --test_path. Tärkeää on myös muuttaa käytetty BERT-malli suomalaiseen versioon: 
+--bert_model TurkuNLP/bert-base-finnish-cased-v1
+
+Lisätietoa treenauksen parametreista löytyy sivulta 
+https://github.com/SinaLab/ArabicNER

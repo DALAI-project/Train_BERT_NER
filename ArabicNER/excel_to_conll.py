@@ -19,7 +19,7 @@ input_files = list(path.glob('*.xlsx'))
 print(len(input_files), ' input files')
 
 # List all 'correct' NER tags allowed in the data
-labels_list = ['O','B-PER','I-PER','B-ORG','I-ORG','B-LOC','I-LOC','B-GPE','I-GPE','B-PROD','I-PROD','B-EVENT','I-EVENT','B-DATE','I-DATE','B-JON','I-JON','B-FIBC','I-FIBC','B-NOPR','I-NOPR']
+labels_list = ['O','B-PER','I-PER','B-ORG','I-ORG','B-LOC','I-LOC','B-GPE','I-GPE','B-PROD','I-PROD','B-EVENT','I-EVENT','B-DATE','I-DATE','B-JON','I-JON','B-FIBC','I-FIBC','B-NORP','I-NORP']
 
 tokens = list()
 # transform each .xlsx file separately

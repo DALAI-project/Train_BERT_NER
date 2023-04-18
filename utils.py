@@ -20,7 +20,29 @@ labels_dict = {'O':'O',
                'B-NORP':'B-NORP','I-NORP':'I-NORP'}
 labels_list = list(labels_dict.keys())
 
-
+# Removes extra tags from Turku data
+def format_turku_tags(conll_path, save_path):
+    file_ = open(conll_path, 'r')
+    lines = file_.readlines()
+    replaced_tokens = 0
+    with open(save_path, 'w') as f:
+        for i, line in enumerate(lines):
+            if line != '\n':
+                split_line = line.split('\t')
+                label = split_line[1].strip('\n')
+                token = split_line[0]
+                if label not in labels_list:
+                    label = 'O'
+                    replaced_tokens += 1
+                else:
+                    label = labels_dict[label]
+                new_line = token + ' ' + label + '\n'
+                line = new_line
+            f.write(line)
+    print('Total number of tokens: ', len(lines))
+    print('Number of replaced tokens: ', replaced_tokens)
+    
+    
 # Get tag counts from annotation file in conll-format
 def count_tags(conll_path):
     file_ = open(conll_path, 'r')

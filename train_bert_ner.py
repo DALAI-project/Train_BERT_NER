@@ -304,34 +304,37 @@ def train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, ep
 # Function for evaluating trained model with test data
 def evaluate(model, test_dataloader):
     test_preds, test_labels = [], []
+    model.eval()
     
     eval_loss, eval_accuracy = 0, 0
-    nb_eval_examples, nb_eval_steps = 0, 0
+    nb_eval_steps = 0
 
-    for data, labels in test_dataloader:
+    for data, labels in tqdm(test_dataloader):
         labels = labels.to(device)
         mask = data['attention_mask'].squeeze(1).to(device)
         input_id = data['input_ids'].squeeze(1).to(device)
 
-        loss, logits = model(input_ids=input_id, attention_mask=mask, labels=labels, return_dict=False)
+        with torch.no_grad():
+            loss, logits = model(input_ids=input_id, attention_mask=mask, labels=labels, return_dict=False)
         
         eval_loss += loss.item()
 
         nb_eval_steps += 1
-        nb_eval_examples += labels.size(0)
 
         tags, predictions = format_labels(labels, logits)
          
         test_labels.append(tags)
         test_preds.append(predictions)
         
-        tmp_eval_accuracy = accuracy_score(np.array(tags), np.array(predictions))
+        #find indeces to remove 'O' tags for better accuracy calculations
+        indeces_with_O =  np.where(np.array(tags)=='O')[0]
+        tmp_eval_accuracy = accuracy_score(np.delete(tags, indeces_with_O), np.delete(predictions, indeces_with_O))
         eval_accuracy += tmp_eval_accuracy
 
     eval_loss = eval_loss / nb_eval_steps
     eval_accuracy = eval_accuracy / nb_eval_steps
-    print(f"Validation Loss: {eval_loss}")
-    print(f"Validation Accuracy: {eval_accuracy}")
+    print(f"Test Loss: {eval_loss}")
+    print(f"Test Accuracy: {eval_accuracy}")
     
     # Reports model performance for each tag category
     print(classification_report(test_labels, test_preds, zero_division=1))
@@ -362,7 +365,7 @@ def plot_metrics(hist_dict):
 
 def main():
 
-    train_dataset, val_dataset, test_dataset, train_dataloader, val_dataloader, test_dataloader = get_data(args.data_path, tokenizer)
+    train_dataset, _, _, train_dataloader, val_dataloader, test_dataloader = get_data(args.data_path, tokenizer)
 
     n_unique_tags = len(list(labels_to_ids.keys()))
     test_init_loss(model, train_dataset, 55, n_unique_tags)

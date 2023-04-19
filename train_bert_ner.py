@@ -125,7 +125,7 @@ class DataSequence(Dataset):
 def get_data(data_path, tokenizer):
     tr_tokens, tr_tags = format_conll(data_path + 'train.txt')
     val_tokens, val_tags = format_conll(data_path + 'val.txt')
-    test_tokens, test_tags = format_conll(data_path + 'val.txt')
+    test_tokens, test_tags = format_conll(data_path + 'test.txt')
 
     print("TRAIN Dataset: {}".format(sum([len(t) for t in tr_tokens])))
     print("VALIDATION Dataset: {}".format(sum([len(t) for t in val_tokens])))
@@ -221,13 +221,15 @@ def train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, ep
                 total_loss_train += loss.item()
 
             loss.backward()
+            
+            # Avoids exploding gradient by doing gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            
             optimizer.step()
 
             if timestep % 10 == 0:
                     print("Epoch %d | Batch %d/%d | Timestep %d | LR %.10f | Loss %f"%(epoch_num,b,n_train,timestep,optimizer.param_groups[0]['lr'],loss.item()))
-
-        # Avoids exploding gradient by doing gradient clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            timestep += 1
 
         model.eval()
 

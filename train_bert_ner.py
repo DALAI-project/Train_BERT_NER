@@ -242,8 +242,8 @@ def train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, ep
             val_label = val_label.to(device)
             mask = val_data['attention_mask'].squeeze(1).to(device)
             input_id = val_data['input_ids'].squeeze(1).to(device)
-
-            loss, logits = model(input_ids=input_id, attention_mask=mask, labels=val_label, return_dict=False)
+            with torch.no_grad():
+                loss, logits = model(input_ids=input_id, attention_mask=mask, labels=val_label, return_dict=False)
             labels, predictions = format_labels(val_label, logits)
             val_labels.append(labels)
             val_preds.append(predictions)

@@ -306,7 +306,7 @@ def evaluate(model, test_dataloader):
     test_preds, test_labels = [], []
     model.eval()
     
-    eval_loss, eval_accuracy = 0, 0
+    eval_loss, eval_accuracy, eval_accuracy_wo_O = 0, 0, 0
     nb_eval_steps = 0
 
     for data, labels in tqdm(test_dataloader):
@@ -328,8 +328,15 @@ def evaluate(model, test_dataloader):
         
         #find indeces to remove 'O' tags for better accuracy calculations
         indeces_with_O =  np.where(np.array(tags)=='O')[0]
-        tmp_eval_accuracy = accuracy_score(np.delete(tags, indeces_with_O), np.delete(predictions, indeces_with_O))
-        eval_accuracy += tmp_eval_accuracy
+        tmp_eval_accuracy_wo_O = accuracy_score(np.delete(tags, indeces_with_O), np.delete(predictions, indeces_with_O))
+        tmp_eval_accuracy = accuracy_score(tags, predictions)
+        
+        #check if all tags are 'O'-tags -> accuracy= nan
+        if np.isnan(tmp_eval_accuracy_wo_O):
+            eval_accuracy += tmp_eval_accuracy
+        else:
+            eval_accuracy += tmp_eval_accuracy
+            eval_accuracy_wo_O += tmp_eval_accuracy_wo_O
 
     eval_loss = eval_loss / nb_eval_steps
     eval_accuracy = eval_accuracy / nb_eval_steps

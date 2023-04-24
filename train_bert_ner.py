@@ -32,6 +32,8 @@ parser.add_argument('--num_workers', type=int, default=4,
                     help='Number of workers used for the data loaders.')
 parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to train without improvement in selected metric.')
+parser.add_argument('--freeze_layers', type=int, default=0,
+                    help='Number of BERT layers frozen during training.')
 
 args = parser.parse_args()
 
@@ -97,6 +99,21 @@ def align_label(text, labels, label_all_tokens = True):
       
     return label_ids
 
+  
+# Freeze BERT layers
+def freeze_bert_layers():
+    if args.freeze_layers:
+	    # We freeze here the embeddings of the model
+        for param in model.bert.embeddings.parameters():
+            param.requires_grad = False
+
+        if args.freeze_layers != -1:
+	          # if freeze_layers == -1, we only freeze the embedding layer
+	          # otherwise we freeze the first `freeze_layers` encoder layers
+            for layer in model.bert.encoder.layer[:args.freeze_layers]:
+                for param in layer.parameters():
+                    param.requires_grad = False
+                    
 
 # Pytorch Dataset for creating batched training data
 class DataSequence(Dataset):

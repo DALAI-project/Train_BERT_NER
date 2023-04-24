@@ -138,7 +138,7 @@ def get_data(data_path, tokenizer):
     test_dataset = DataSequence(test_tags, test_tokens, args.max_len, tokenizer)
 
     # Create train, validation and test dataloaders
-    train_dataloader = DataLoader(train_dataset, num_workers=args.num_workers, batch_size=args.batch_size, shuffle=True)
+    train_dataloader = DataLoader(train_dataset, num_workers=args.num_workers, batch_size=args.batch_size, shuffle=True, drop_last = True)
     val_dataloader = DataLoader(val_dataset, num_workers=args.num_workers, batch_size=args.batch_size)
     test_dataloader = DataLoader(test_dataset, num_workers=args.num_workers, batch_size=args.batch_size)
 
@@ -218,8 +218,8 @@ def train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, ep
                 predictions = logits_clean.argmax(dim=1)
                 acc = (predictions == label_clean).float().mean()
                 total_acc_train += acc
-                total_loss_train += loss.item()
-
+            
+            total_loss_train += loss.item()
             loss.backward()
             
             # Avoids exploding gradient by doing gradient clipping
@@ -255,11 +255,12 @@ def train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, ep
                 predictions = logits_clean.argmax(dim=1)
                 acc = (predictions == label_clean).float().mean()
                 total_acc_val += acc
-                total_loss_val += loss.item()
+            
+            total_loss_val += loss.item()
 
-        tr_accuracy = total_acc_train / n_train 
+        tr_accuracy = total_acc_train / (n_train*args.batch_size) 
         tr_loss = total_loss_train / n_train
-        val_accuracy = total_acc_val / n_val
+        val_accuracy = total_acc_val / (n_val*args.batch_size)
         val_loss = total_loss_val / n_val
 
         val_acc_history.append(val_accuracy)
@@ -342,6 +343,7 @@ def evaluate(model, test_dataloader):
     eval_accuracy = eval_accuracy / nb_eval_steps
     print(f"Test Loss: {eval_loss}")
     print(f"Test Accuracy: {eval_accuracy}")
+    print(f"Test Accuracy w/o O-tags: {eval_accuracy_wo_O}")
     
     # Reports model performance for each tag category
     print(classification_report(test_labels, test_preds, zero_division=1))

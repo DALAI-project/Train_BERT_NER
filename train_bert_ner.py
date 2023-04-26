@@ -8,6 +8,7 @@ from sklearn.metrics import accuracy_score, f1_score
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from seqeval.metrics import classification_report
+from torch.utils.tensorboard import SummaryWriter
 
 # Big part of the code is taken and modified from
 # https://towardsdatascience.com/named-entity-recognition-with-bert-in-pytorch-a454405e0b6a
@@ -24,6 +25,8 @@ parser.add_argument('--max_len', type=int, default=512,
                     help='Maximum length of data sequence.')
 parser.add_argument('--learning_rate', type=float, default=0.001,
                     help='Model learning rate.')
+parser.add_argument('--gamma', type=float, default=0.8,
+                    help='gamma for exponential decay')
 parser.add_argument('--epochs', type=int, default=20,
                     help='Number of training epochs.')
 parser.add_argument('--batch_size', type=int, default=8,
@@ -34,6 +37,7 @@ parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to train without improvement in selected metric.')
 parser.add_argument('--freeze_layers', type=int, default=0,
                     help='Number of BERT layers frozen during training.')
+parser.add_argument('--double_lr', action='store', type=bool, required=False, default = False, help='Whether to use different lrs for feature and classifier parts of the model')
 
 args = parser.parse_args()
 
@@ -52,6 +56,7 @@ ids_to_labels = {v: k for k, v in labels_to_ids.items()}
 # Initialize tokenizer and BERT model
 tokenizer = BertTokenizerFast.from_pretrained("TurkuNLP/bert-base-finnish-cased-v1")
 model = BertForTokenClassification.from_pretrained("TurkuNLP/bert-base-finnish-cased-v1", num_labels=len(labels_to_ids.keys()))
+model.config.classifier_dropout = 0.2
 model.to(device)
 
 # Turn conll data into lists of labels and tokens
@@ -212,6 +217,11 @@ def train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, ep
 
     n_train = len(train_dataloader)
     n_val = len(val_dataloader)
+    
+    #tensorboard logger
+    #if not os.path.isdir(args.save_model_path):
+    #    os.makedirs(args.save_model_path)
+    #writer = SummaryWriter(args.save_model_path)
 
     for epoch_num in range(epochs):
         total_acc_train = 0
@@ -264,6 +274,8 @@ def train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, ep
             labels, predictions = format_labels(val_label, logits)
             val_labels.append(labels)
             val_preds.append(predictions)
+            #val_labels += labels
+            #val_preds += predictions
 
             for i in range(logits.shape[0]):
                 logits_clean = logits[i][val_label[i] != -100]
@@ -279,7 +291,15 @@ def train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, ep
         tr_loss = total_loss_train / n_train
         val_accuracy = total_acc_val / (n_val*args.batch_size)
         val_loss = total_loss_val / n_val
-
+        
+        #writer.add_scalar("Loss/valid", val_loss, epoch_num)
+        #writer.add_scalar("Loss/train", tr_loss, epoch_num)
+        #accuracies
+        #writer.add_scalar("Accuracy/train", tr_accuracy, epoch_num)
+        #writer.add_scalar("Accuracy/valid", val_accuracy, epoch_num)
+        #f-scores
+        #writer.add_scalar("F-score/balanced", f1_score(val_labels, val_preds, average='weighted'), epoch_num)
+        
         val_acc_history.append(val_accuracy)
         val_loss_history.append(val_loss)
         tr_acc_history.append(tr_accuracy)
@@ -392,20 +412,26 @@ def plot_metrics(hist_dict):
 def main():
 
     train_dataset, _, _, train_dataloader, val_dataloader, test_dataloader = get_data(args.data_path, tokenizer)
-
+    freeze_bert_layers()
     n_unique_tags = len(list(labels_to_ids.keys()))
     test_init_loss(model, train_dataset, 55, n_unique_tags)
     test_alignment(tokenizer, train_dataset, 55)
 
-    #optimizer = SGD(model.parameters(), lr=args.learning_rate)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=1, last_epoch=-1, verbose=True)
+    if args.double_lr:
+        optimizer = torch.optim.AdamW([{"params": model.bert.parameters(), "lr": args.learning_rate/10},
+                        {"params": model.classifier.parameters(), "lr": args.learning_rate}
+                        ])
+    else:
+    	#optimizer = SGD(model.parameters(), lr=args.learning_rate)
+    	optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.gamma, last_epoch=-1, verbose=True)
 
     # Train the model
     hist_dict = train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, args.epochs)
 
     trained_model = BertForTokenClassification.from_pretrained(args.save_model_path, num_labels=n_unique_tags)
-
+    trained_model.to(device)
+    
     # Evaluate model with test data
     evaluate(trained_model, test_dataloader)
 

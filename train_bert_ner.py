@@ -2,7 +2,7 @@ import os
 import torch
 import argparse
 import numpy as np
-from transformers import BertTokenizerFast, BertForTokenClassification
+from transformers import BertTokenizerFast, BertForTokenClassification, get_linear_schedule_with_warmup
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import accuracy_score, f1_score
 from tqdm import tqdm
@@ -43,6 +43,8 @@ parser.add_argument('--classifier_dropout', type=float, default=0.0,
                     help='dropout value for classifier layer')
 parser.add_argument('--num_validate_during_training', type=int, default=1,
                     help='How many times to validate during training. Default is 1=at the last step.')
+parser.add_argument('--linear_scheduler', action='store', type=bool, required=False, default = False, 
+                    help='Whether to use linear scheduler')
 
 args = parser.parse_args()
 
@@ -353,8 +355,12 @@ def train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, ep
                 if no_improvement >= args.patience*args.num_validate_during_training:
                     print('Training is aborted as validation loss has not improved')
                     break
-                
-        scheduler.step()
+            
+            if args.linear_scheduler:
+                scheduler.step()
+        
+        if not args.linear_scheduler:    
+            scheduler.step()
 
 
     hist_dict = {'tr_acc': tr_acc_history, 
@@ -450,7 +456,10 @@ def main():
     else:
     	#optimizer = SGD(model.parameters(), lr=args.learning_rate)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.gamma, last_epoch=-1, verbose=True)
+    if args.linear_scheduler:
+        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps = round(len(train_dataloader)/5), num_training_steps=len(train_dataloader)*args.epochs)
+    else:
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.gamma, last_epoch=-1, verbose=True)
 
     # Train the model
     hist_dict = train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, args.epochs)

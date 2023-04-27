@@ -41,6 +41,8 @@ parser.add_argument('--double_lr', action='store', type=bool, required=False, de
                     help='Whether to use different lrs for feature and classifier parts of the model')
 parser.add_argument('--classifier_dropout', type=float, default=0.0,
                     help='dropout value for classifier layer')
+parser.add_argument('--num_validate_during_training', type=int, default=1,
+                    help='How many times to validate during training. Default is 1=at the last step.')
 
 args = parser.parse_args()
 
@@ -208,6 +210,70 @@ def format_labels(labels, logits):
 
     return tags, preds
 
+def validate(model, val_dataloader):
+    model.eval()
+
+    total_acc_val = 0
+    total_loss_val = 0
+
+    # Validation loop
+    val_preds, val_labels = [], []
+    for val_data, val_label in tqdm(val_dataloader):
+        val_label = val_label.to(device)
+        mask = val_data['attention_mask'].squeeze(1).to(device)
+        input_id = val_data['input_ids'].squeeze(1).to(device)
+        with torch.no_grad():
+            loss, logits = model(input_ids=input_id, attention_mask=mask, labels=val_label, return_dict=False)
+        labels, predictions = format_labels(val_label, logits)
+        val_labels.append(labels)
+        val_preds.append(predictions)
+        #val_labels += labels
+        #val_preds += predictions
+
+        for i in range(logits.shape[0]):
+            logits_clean = logits[i][val_label[i] != -100]
+            label_clean = val_label[i][val_label[i] != -100]
+
+            predictions = logits_clean.argmax(dim=1)
+            acc = (predictions == label_clean).float().mean()
+            total_acc_val += acc
+        
+        total_loss_val += loss.item()
+    
+    return total_loss_val, total_acc_val, val_labels, val_preds
+
+def print_accuracies(total_acc_train,total_loss_train,total_acc_val,total_loss_val, n_train, n_val, 
+                     val_acc_history, val_loss_history, tr_acc_history,tr_loss_history,epoch_num, val_labels, val_preds):
+    tr_accuracy = total_acc_train / (n_train*args.batch_size) 
+    tr_loss = total_loss_train / n_train
+    val_accuracy = total_acc_val / (n_val*args.batch_size)
+    val_loss = total_loss_val / n_val
+    
+    #writer.add_scalar("Loss/valid", val_loss, epoch_num)
+    #writer.add_scalar("Loss/train", tr_loss, epoch_num)
+    #accuracies
+    #writer.add_scalar("Accuracy/train", tr_accuracy, epoch_num)
+    #writer.add_scalar("Accuracy/valid", val_accuracy, epoch_num)
+    #f-scores
+    #writer.add_scalar("F-score/balanced", f1_score(val_labels, val_preds, average='weighted'), epoch_num)
+    
+    val_acc_history.append(val_accuracy)
+    val_loss_history.append(val_loss)
+    tr_acc_history.append(tr_accuracy)
+    tr_loss_history.append(tr_loss)
+
+    print(
+        f'Epochs: {epoch_num + 1} \
+        | Loss: {tr_loss: .3f} \
+        | Accuracy: {tr_accuracy: .3f} \
+        | Val_Loss: {val_loss: .3f} \
+        | Val_accuracy: {val_accuracy: .3f}')
+
+    print('\n')
+    print(classification_report(val_labels, val_preds, zero_division=1))
+    
+    return val_loss
+
 # Function for training the model
 def train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, epochs):
     best_val_loss = 1000
@@ -222,11 +288,14 @@ def train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, ep
     n_train = len(train_dataloader)
     n_val = len(val_dataloader)
     
+    #calculate frac that is used in determining when to validate
+    frac, _ = divmod(n_train,args.num_validate_during_training)
+    
     #tensorboard logger
     #if not os.path.isdir(args.save_model_path):
     #    os.makedirs(args.save_model_path)
     #writer = SummaryWriter(args.save_model_path)
-
+    no_improvement = 0
     for epoch_num in range(epochs):
         total_acc_train = 0
         total_loss_train = 0
@@ -261,77 +330,30 @@ def train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, ep
             if timestep % 10 == 0:
                     print("Epoch %d | Batch %d/%d | Timestep %d | LR %.10f | Loss %f"%(epoch_num,b,n_train,timestep,optimizer.param_groups[0]['lr'],loss.item()))
             timestep += 1
-
-        model.eval()
-
-        total_acc_val = 0
-        total_loss_val = 0
-
-        # Validation loop
-        val_preds, val_labels = [], []
-        for batch, (val_data, val_label) in enumerate(tqdm(val_dataloader)):
-            val_label = val_label.to(device)
-            mask = val_data['attention_mask'].squeeze(1).to(device)
-            input_id = val_data['input_ids'].squeeze(1).to(device)
-            with torch.no_grad():
-                loss, logits = model(input_ids=input_id, attention_mask=mask, labels=val_label, return_dict=False)
-            labels, predictions = format_labels(val_label, logits)
-            val_labels.append(labels)
-            val_preds.append(predictions)
-            #val_labels += labels
-            #val_preds += predictions
-
-            for i in range(logits.shape[0]):
-                logits_clean = logits[i][val_label[i] != -100]
-                label_clean = val_label[i][val_label[i] != -100]
-
-                predictions = logits_clean.argmax(dim=1)
-                acc = (predictions == label_clean).float().mean()
-                total_acc_val += acc
             
-            total_loss_val += loss.item()
+            #do validation num_validate_during_training times
+            if (b+1) % frac == 0:
+                print(f'validating on iter {b} on epoch {epoch_num}')
+                total_loss_val, total_acc_val, val_labels, val_preds = validate(model, val_dataloader)
+                val_loss = print_accuracies(total_acc_train,total_loss_train,total_acc_val,total_loss_val, n_train, n_val, 
+                            val_acc_history, val_loss_history, tr_acc_history,tr_loss_history,epoch_num, val_labels, val_preds)
 
-        tr_accuracy = total_acc_train / (n_train*args.batch_size) 
-        tr_loss = total_loss_train / n_train
-        val_accuracy = total_acc_val / (n_val*args.batch_size)
-        val_loss = total_loss_val / n_val
-        
-        #writer.add_scalar("Loss/valid", val_loss, epoch_num)
-        #writer.add_scalar("Loss/train", tr_loss, epoch_num)
-        #accuracies
-        #writer.add_scalar("Accuracy/train", tr_accuracy, epoch_num)
-        #writer.add_scalar("Accuracy/valid", val_accuracy, epoch_num)
-        #f-scores
-        #writer.add_scalar("F-score/balanced", f1_score(val_labels, val_preds, average='weighted'), epoch_num)
-        
-        val_acc_history.append(val_accuracy)
-        val_loss_history.append(val_loss)
-        tr_acc_history.append(tr_accuracy)
-        tr_loss_history.append(tr_loss)
+                # Saves model if validation accuracy improves
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    #epoch_n = epoch_num
+                    print('Saving model to ', args.save_model_path)
+                    # Save trained model
+                    model.save_pretrained(args.save_model_path, from_pt=True)
+                    #epoch_n = epoch_num
+                    no_improvement = 0
+                else:
+                    no_improvement += 1
 
-        print(
-            f'Epochs: {epoch_num + 1} \
-            | Loss: {tr_loss: .3f} \
-            | Accuracy: {tr_accuracy: .3f} \
-            | Val_Loss: {val_loss: .3f} \
-            | Val_accuracy: {val_accuracy: .3f}')
-
-        print('\n')
-        print(classification_report(val_labels, val_preds, zero_division=1))
-
-        # Saves model if validation accuracy improves
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            epoch_n = epoch_num
-            print('Saving model to ', args.save_model_path)
-            # Save trained model
-            model.save_pretrained(args.save_model_path, from_pt=True)
-            epoch_n = epoch_num
-
-        elif (epoch_num - epoch_n) >= args.patience:
-            print('Training is aborted as validation loss has not improved')
-            break
-
+                if no_improvement >= args.patience*args.num_validate_during_training:
+                    print('Training is aborted as validation loss has not improved')
+                    break
+                
         scheduler.step()
 
 
@@ -393,23 +415,23 @@ def evaluate(model, test_dataloader):
 
 def plot_metrics(hist_dict):
     """Function for plotting the training and validation results."""
-    epochs = range(1, args.epochs+1)
+    epochs = range(1, (args.epochs*args.num_validate_during_training)+1)
     plt.plot(epochs, hist_dict['tr_loss'], 'g', label='Training loss')
     plt.plot(epochs, hist_dict['val_loss'], 'b', label='Validation loss')
-    plt.title('Training and Validation loss')
-    plt.xlabel('Epochs')
+    plt.title('Training & Validation loss')
+    plt.xlabel('Epochs*num_validate')
     plt.ylabel('Loss')
     plt.legend()
-    plt.savefig('./results/tr_val_loss.jpg', bbox_inches='tight')
+    plt.savefig(args.save_model_path + '/tr_val_loss.jpg', bbox_inches='tight')
     plt.close()
 
     plt.plot(epochs, hist_dict['tr_acc'], 'g', label='Training accuracy')
     plt.plot(epochs, hist_dict['val_acc'], 'b', label='Validation accuracy')
-    plt.title('Training and Validation accuracy')
-    plt.xlabel('Epochs')
+    plt.title('Training & Validation accuracy')
+    plt.xlabel('Epochs*num_validate')
     plt.ylabel('Accuracy')
     plt.legend()
-    plt.savefig('./results/tr_val_acc.jpg', bbox_inches='tight')
+    plt.savefig(args.save_model_path + '/tr_acc.jpg', bbox_inches='tight')
     plt.close()
 
 

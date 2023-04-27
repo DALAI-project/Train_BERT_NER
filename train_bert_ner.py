@@ -37,7 +37,10 @@ parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to train without improvement in selected metric.')
 parser.add_argument('--freeze_layers', type=int, default=0,
                     help='Number of BERT layers frozen during training.')
-parser.add_argument('--double_lr', action='store', type=bool, required=False, default = False, help='Whether to use different lrs for feature and classifier parts of the model')
+parser.add_argument('--double_lr', action='store', type=bool, required=False, default = False, 
+                    help='Whether to use different lrs for feature and classifier parts of the model')
+parser.add_argument('--classifier_dropout', type=float, default=0.0,
+                    help='dropout value for classifier layer')
 
 args = parser.parse_args()
 
@@ -56,7 +59,8 @@ ids_to_labels = {v: k for k, v in labels_to_ids.items()}
 # Initialize tokenizer and BERT model
 tokenizer = BertTokenizerFast.from_pretrained("TurkuNLP/bert-base-finnish-cased-v1")
 model = BertForTokenClassification.from_pretrained("TurkuNLP/bert-base-finnish-cased-v1", num_labels=len(labels_to_ids.keys()))
-model.config.classifier_dropout = 0.2
+if args.classifier_dropout:
+    model.config.classifier_dropout = args.classifier_dropout
 model.to(device)
 
 # Turn conll data into lists of labels and tokens
@@ -423,7 +427,7 @@ def main():
                         ])
     else:
     	#optimizer = SGD(model.parameters(), lr=args.learning_rate)
-    	optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.gamma, last_epoch=-1, verbose=True)
 
     # Train the model

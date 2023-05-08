@@ -6,7 +6,7 @@ import os
 
 
 labels_dict = {'O':'O',
-               'B-PER':'B-PERSON','I-PER':'I-PER',
+               'B-PER':'B-PERSON','I-PER':'I-PERSON',
                'B-PERSON':'B-PERSON','I-PERSON':'I-PERSON',
                'B-ORG':'B-ORG','I-ORG':'I-ORG',
                'B-LOC':'B-LOC','I-LOC':'I-LOC',

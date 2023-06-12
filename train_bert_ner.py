@@ -1,56 +1,64 @@
 import os
+import ast
+import stat
 import torch
 import argparse
+import evaluate
 import numpy as np
-from transformers import BertTokenizerFast, BertForTokenClassification, get_linear_schedule_with_warmup
-from torch.utils.data import Dataset, DataLoader
-from sklearn.metrics import accuracy_score, f1_score
-from tqdm import tqdm
+import pandas as pd
+from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
+from accelerate import Accelerator
+from torch.utils.data import Dataset, DataLoader
 from seqeval.metrics import classification_report
-from torch.utils.tensorboard import SummaryWriter
+from datasets import Dataset, DatasetDict, load_dataset
+from transformers import AutoTokenizer, AutoModelForTokenClassification, get_scheduler, DataCollatorForTokenClassification
 
-# Big part of the code is taken and modified from
-# https://towardsdatascience.com/named-entity-recognition-with-bert-in-pytorch-a454405e0b6a
-# and
-# https://colab.research.google.com/github/NielsRogge/Transformers-Tutorials/blob/master/BERT/Custom_Named_Entity_Recognition_with_BERT_only_first_wordpiece.ipynb#scrollTo=IEnlUbgm8z3B
+## Running the code using accelerate
 
-parser = argparse.ArgumentParser('Arguments for training BERT based NER model')
+# for possible parameters, see 'accelerate launch -h'
+# Run the code with all available GPUs with mixed precision disabled: 'accelerate launch --multi_gpu train_ner.py'
+# Same as above with mixed precision: 'accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes=2 train_ner.py'
+# Use only one GPU: 'accelerate launch --num_processes=1 train_ner.py'
+# Use only one GPU defined using GPU id: 'accelerate launch --num_processes=1 --gpu_ids=0 train_ner.py'
 
-parser.add_argument('--data_path', type=str, default="/home/ubuntu/NER/ArabicNER/data/tr_val_test/",
+# nohup accelerate launch --num_processes=1 --gpu_ids=1 train_ner.py > bert_runs/09_06_23_e10_linear_lr_b16_lr2e-5/train_log.txt 2>&1 &
+# echo $! > bert_runs/09_06_23_e10_linear_lr_b16_lr2e-5/save_pid.txt
+
+
+parser = argparse.ArgumentParser('Arguments for training BERT NER model')
+
+parser.add_argument('--data_path', type=str, default="./data/",
                     help='path to data')
-parser.add_argument('--save_model_path', type=str, default="./model/18042023",
+parser.add_argument('--save_model_path', type=str, default="./checkpoint/",
                     help='path where the trained model is saved')
 parser.add_argument('--max_len', type=int, default=512,
                     help='Maximum length of data sequence.')
-parser.add_argument('--learning_rate', type=float, default=0.001,
+parser.add_argument('--learning_rate', type=float, default=0.00002, 
                     help='Model learning rate.')
 parser.add_argument('--gamma', type=float, default=0.8,
                     help='gamma for exponential decay')
-parser.add_argument('--epochs', type=int, default=20,
+parser.add_argument('--epochs', type=int, default=10,
                     help='Number of training epochs.')
-parser.add_argument('--batch_size', type=int, default=8,
+parser.add_argument('--batch_size', type=int, default=16,
                     help='Size of data batch.')
 parser.add_argument('--num_workers', type=int, default=4,
                     help='Number of workers used for the data loaders.')
 parser.add_argument('--patience', type=int, default=2,
-                    help='Number of epochs to train without improvement in selected metric.')
+                    help='Number of epochs to continue training without improvement in selected metric.')
 parser.add_argument('--freeze_layers', type=int, default=0,
                     help='Number of BERT layers frozen during training.')
-parser.add_argument('--double_lr', action='store', type=bool, required=False, default = False, 
-                    help='Whether to use different lrs for feature and classifier parts of the model')
-parser.add_argument('--classifier_dropout', type=float, default=0.0,
-                    help='dropout value for classifier layer')
+parser.add_argument('--double_lr', action='store', type=bool, required=False, default=False, 
+                    help='Whether to use different learning rates for feature and classifier parts of the model.')
+parser.add_argument('--classifier_dropout', type=float, default=None,
+                    help='Dropout value for classifier layer')
 parser.add_argument('--num_validate_during_training', type=int, default=1,
                     help='How many times to validate during training. Default is 1=at the last step.')
-parser.add_argument('--linear_scheduler', action='store', type=bool, required=False, default = False, 
-                    help='Whether to use linear scheduler')
+parser.add_argument('--linear_scheduler', action='store', type=bool, required=False, default=True, 
+                    help='Whether to use linear or exponential scheduler.')
 
 args = parser.parse_args()
 
-# Use GPU if available
-use_cuda = torch.cuda.is_available()
-device = torch.device("cuda" if use_cuda else "cpu")
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -58,362 +66,342 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 labels_to_ids = {'O': 0, 'B-PERSON': 1, 'I-PERSON': 2, 'B-ORG': 3, 'I-ORG': 4, 'B-LOC': 5, 'I-LOC': 6, 'B-GPE': 7, 'I-GPE': 8,
                  'B-PRODUCT': 9, 'I-PRODUCT': 10, 'B-EVENT': 11, 'I-EVENT': 12, 'B-DATE': 13, 'I-DATE': 14, 'B-JON': 15, 'I-JON': 16, 
                  'B-FIBC': 17, 'I-FIBC': 18, 'B-NORP': 19, 'I-NORP': 20}
+# Another dictionary maps numeric ids to labels
 ids_to_labels = {v: k for k, v in labels_to_ids.items()}
 
 # Initialize tokenizer and BERT model
-tokenizer = BertTokenizerFast.from_pretrained("TurkuNLP/bert-base-finnish-cased-v1")
-model = BertForTokenClassification.from_pretrained("TurkuNLP/bert-base-finnish-cased-v1", num_labels=len(labels_to_ids.keys()))
+tokenizer = AutoTokenizer.from_pretrained("TurkuNLP/bert-base-finnish-cased-v1")
+# Collator used for building data batches
+data_collator = DataCollatorForTokenClassification(tokenizer=tokenizer)
+model = AutoModelForTokenClassification.from_pretrained("TurkuNLP/bert-base-finnish-cased-v1", id2label=ids_to_labels, label2id=labels_to_ids)
+# Initialize Accelerator instance
+accelerator = Accelerator()
+
+# Set dropout for classifier layers
 if args.classifier_dropout:
     model.config.classifier_dropout = args.classifier_dropout
-model.to(device)
 
-# Turn conll data into lists of labels and tokens
-def format_conll(conll_path):
-    file_ = open(conll_path, 'r')
-    lines = file_.readlines()
-    all_tokens = []
-    tokens = []
-    all_tags = []
-    tags = []
-    for line in lines:
-        if line != '\n':
-            split_line = line.split(' ')
-            tag = split_line[1].strip('\n')
-            token = split_line[0]
-            tags.append(tag)
-            tokens.append(token)
+def de_stringify_lists(example):
+    """De-stringifies lists of tags and tokens in the datasets."""
+    example["tags"] = [ast.literal_eval(l) for l in example['tags']]
+    example["tokens"] = [ast.literal_eval(l) for l in example['tokens']]
+    return example
+
+def tags_to_ids(example):
+    """Transform NER tags into corresponding (numeric) tag ids."""
+    example["tags"] = [[labels_to_ids[tag] for tag in l] for l in example['tags']]
+    return example
+
+def align_labels_with_tokens(labels, word_ids):
+    """Align NER tags with the tokens generated by the tokenizer.
+    This is required because the use of subword tokens changes sequence length."""
+    new_labels = []
+    current_word = None
+    for word_id in word_ids:
+        if word_id != current_word:
+            # Start of a new word!
+            current_word = word_id
+            label = -100 if word_id is None else labels[word_id]
+            new_labels.append(label)
+        elif word_id is None:
+            # Special token
+            new_labels.append(-100)
         else:
-            all_tokens.append(tokens)
-            all_tags.append(tags)
-            tokens=[]
-            tags=[]
-    return all_tokens, all_tags
+            # Same word as previous token
+            label = labels[word_id]
+            # If the label is B-XXX we change it to I-XXX
+            if label % 2 == 1:
+                label += 1
+            new_labels.append(label)
 
+    return new_labels
 
-# Realigns NER labels with BERT tokenization that often splits words into multiple parts
-# (for instance 'kaksoiskappaleet' -> 'kaksois', '##kappale', '##et')
-def align_label(text, labels, label_all_tokens = True):
-    word_ids = text.word_ids()
-    previous_word_idx = None
-    label_ids = []
-   
-    for word_idx in word_ids:
-        if word_idx is None:
-            # Inidices that should be ignored have a label of -100
-            label_ids.append(-100)   
-        elif word_idx != previous_word_idx:
-            try:
-                label_ids.append(labels_to_ids[labels[word_idx]])
-            except:
-                label_ids.append(-100)
-        else:
-            label_ids.append(labels_to_ids[labels[word_idx]] if label_all_tokens else -100)
-        previous_word_idx = word_idx
-      
-    return label_ids
+def tokenize_and_align_labels(examples):
+    """Tokenize input text and align NER tags with
+    the resulting token sequence."""
+    tokenized_inputs = tokenizer(examples["tokens"], truncation=True, is_split_into_words=True)
+    all_labels = examples["tags"]
+    new_labels = []
+    for i, labels in enumerate(all_labels):
+        word_ids = tokenized_inputs.word_ids(i)
+        new_labels.append(align_labels_with_tokens(labels, word_ids))
+    tokenized_inputs["labels"] = new_labels
 
-  
-# Freeze BERT layers
-def freeze_bert_layers():
+    return tokenized_inputs
+
+def get_data():
+    """Function for creating train, validation and test datasets."""
+    # Combine the three datasets in .csv form into one DatasetDict
+    datasets = load_dataset('csv', data_files={'train': args.data_path + 'train.csv', 'validation': args.data_path + 'val.csv', 'test': args.data_path + 'test.csv'})
+    # De-stringify lists of tags and tokens in the datasets
+    datasets = datasets.map(de_stringify_lists, batched=True)
+    # Change NER tags in all datasets into numeric form (f.ex. B-PERSON -> 1)
+    datasets = datasets.map(tags_to_ids, batched=True)
+
+    # Tokenize all 3 dataset using datasets.map and batched=True to speed up the process
+    tokenized_datasets = datasets.map(tokenize_and_align_labels, batched=True, remove_columns=datasets["train"].column_names)
+
+    # Create PyTorch DataLoaders
+    train_dataloader = DataLoader(tokenized_datasets["train"], shuffle=True, collate_fn=data_collator, batch_size=args.batch_size)
+    val_dataloader = DataLoader(tokenized_datasets["validation"], collate_fn=data_collator, batch_size=args.batch_size)
+    test_dataloader = DataLoader(tokenized_datasets["test"], collate_fn=data_collator, batch_size=args.batch_size)
+
+    return train_dataloader, val_dataloader, test_dataloader
+
+def postprocess(predictions, labels):
+    """Clean up and transform labels and predictions into
+    text form for evaluation."""
+    predictions = predictions.detach().cpu().clone().numpy()
+    labels = labels.detach().cpu().clone().numpy()
+
+    # Remove ignored index (special tokens) and convert to labels
+    true_labels = [[ids_to_labels[l] for l in label if l != -100] for label in labels]
+
+    true_predictions = [
+            [ids_to_labels[p] for (p, l) in zip(prediction, label) if l != -100]
+            for prediction, label in zip(predictions, labels)
+        ]
+
+    return true_predictions, true_labels
+
+def gather_predictions(predictions, labels):
+    # Necessary to pad predictions and labels for being gathered
+    predictions = accelerator.pad_across_processes(predictions, dim=1, pad_index=-100)
+    labels = accelerator.pad_across_processes(labels, dim=1, pad_index=-100)
+
+    predictions_gathered = accelerator.gather(predictions)
+    labels_gathered = accelerator.gather(labels)
+    return predictions_gathered, labels_gathered
+
+def validate(model, dataloader):
+    """Function for evaluating the model with validation data during training."""
+    # Load evaluation metric
+    val_seqeval_metric = evaluate.load("seqeval")
+    total_loss_val = 0
+    val_preds, val_labels = [], []
+    # Evaluation loop
+    model.eval()
+    for batch in dataloader:
+        with torch.no_grad():
+            outputs = model(**batch)
+        loss = outputs.loss
+        total_loss_val += loss.item()
+        predictions = outputs.logits.argmax(dim=-1)
+        labels = batch["labels"]
+        predictions_gathered, labels_gathered = gather_predictions(predictions, labels)
+        true_predictions, true_labels = postprocess(predictions_gathered, labels_gathered)
+        # Adds evaluation results from current batch to metric calculations
+        val_seqeval_metric.add_batch(predictions=true_predictions, references=true_labels)
+        val_preds += true_predictions
+        val_labels += true_labels
+
+    # Computes metrics based on batch results
+    results = val_seqeval_metric.compute(zero_division=0)
+    mean_loss = total_loss_val / len(dataloader)
+    print("\nValidation loss %.3f | Validation precision %.3f | Validation recall %.3f | Validation f1 score %.3f | Validation accuracy %.3f\n"%(mean_loss, results['overall_precision'], results['overall_recall'], results['overall_f1'], results["overall_accuracy"]))
+    # Reports model performance for each tag category
+    print(classification_report(val_labels, val_preds, zero_division=1))
+
+    return results, mean_loss
+
+def get_optimizer(model):
+    """Returns optimizer with one learning rate for all model parameters 
+    or separate learning rates for BERT layers and classification layers"""
+    if args.double_lr:
+        optimizer = torch.optim.AdamW(
+            [{"params": model.bert.parameters(), "lr": args.learning_rate/10},
+            {"params": model.classifier.parameters(), "lr": args.learning_rate}
+            ])
+    else:
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+
+    return optimizer
+
+def get_scheduler_(optimizer, train_dataloader):
+    """Returns linear or exponential scheduler."""
+    if args.linear_scheduler:
+        scheduler = get_scheduler(
+                    "linear",
+                    optimizer=optimizer,
+                    num_warmup_steps=round(len(train_dataloader)/5),
+                    num_training_steps=len(train_dataloader)*args.epochs,
+                    )
+    else:
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.gamma, last_epoch=-1, verbose=True)
+
+    return scheduler
+
+def freeze_bert_layers(model):
+    """Freezes BERT layer weights."""
     if args.freeze_layers:
-	    # We freeze here the embeddings of the model
+        # We freeze here the embeddings of the model
         for param in model.bert.embeddings.parameters():
             param.requires_grad = False
 
         if args.freeze_layers != -1:
-	          # if freeze_layers == -1, we only freeze the embedding layer
-	          # otherwise we freeze the first `freeze_layers` encoder layers
+            # if freeze_layers == -1, we only freeze the embedding layer
+            # otherwise we freeze the first `freeze_layers` encoder layers
             for layer in model.bert.encoder.layer[:args.freeze_layers]:
                 for param in layer.parameters():
                     param.requires_grad = False
-                    
 
-# Pytorch Dataset for creating batched training data
-class DataSequence(Dataset):
-    def __init__(self, tags, texts, max_len, tokenizer):
-        self.max_len = max_len
-        self.texts = [tokenizer(text, padding='max_length', max_length = self.max_len, truncation=True, return_tensors="pt", is_split_into_words=True) for text in texts]
-        self.labels = [align_label(i,j) for i,j in zip(self.texts, tags)]
-
-    def __len__(self):
-        return len(self.labels)
-
-    def get_batch_data(self, idx):
-        return self.texts[idx]
-
-    def get_batch_labels(self, idx):
-        return torch.LongTensor(self.labels[idx])
-
-    def __getitem__(self, idx):
-        batch_data = self.get_batch_data(idx)
-        batch_labels = self.get_batch_labels(idx)
-
-        return batch_data, batch_labels
-
-
-# Format conll data into Pytorch datasets and dataloaders
-def get_data(data_path, tokenizer):
-    tr_tokens, tr_tags = format_conll(data_path + 'train.txt')
-    val_tokens, val_tags = format_conll(data_path + 'val.txt')
-    test_tokens, test_tags = format_conll(data_path + 'test.txt')
-
-    print("TRAIN Dataset: {}".format(sum([len(t) for t in tr_tokens])))
-    print("VALIDATION Dataset: {}".format(sum([len(t) for t in val_tokens])))
-    print("TEST Dataset: {}".format(sum([len(t) for t in test_tokens])))
-    print('\n')
-
-    # Create train, validation and test datasets
-    train_dataset = DataSequence(tr_tags, tr_tokens, args.max_len, tokenizer)
-    val_dataset = DataSequence(val_tags, val_tokens, args.max_len, tokenizer)
-    test_dataset = DataSequence(test_tags, test_tokens, args.max_len, tokenizer)
-
-    # Create train, validation and test dataloaders
-    train_dataloader = DataLoader(train_dataset, num_workers=args.num_workers, batch_size=args.batch_size, shuffle=True, drop_last = True)
-    val_dataloader = DataLoader(val_dataset, num_workers=args.num_workers, batch_size=args.batch_size)
-    test_dataloader = DataLoader(test_dataset, num_workers=args.num_workers, batch_size=args.batch_size)
-
-    return train_dataset, val_dataset, test_dataset, train_dataloader, val_dataloader, test_dataloader
-
-# http://karpathy.github.io/2019/04/25/recipe/
-def test_init_loss(model, dataset, idx, num_classes):
-    batch_data, batch_labels = dataset[idx]
-    input_ids = batch_data["input_ids"].squeeze(1).to(device)
-    attention_mask = batch_data["attention_mask"].squeeze(1).to(device)
-    labels = batch_labels.to(device)
-
-    outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
-
-    print('Initial loss: ', outputs[0].item())
-    print('-ln(1/number of classes) = ', -np.log(1/num_classes))
-    print('\n')
-
-def test_alignment(tokenizer, dataset, idx):
-    batch_data, batch_labels = dataset[idx]
-    for token, label in zip(tokenizer.convert_ids_to_tokens(batch_data["input_ids"][0]), batch_labels):
-        if label.item() != -100:
-            print('{0:10}  {1}'.format(token, ids_to_labels[label.item()]))
-    print('\n')
-
-def format_labels(labels, logits):
-    # compute evaluation accuracy
-    flattened_targets = labels.view(-1) # shape (batch_size * seq_len,)
-    active_logits = logits.view(-1, model.num_labels) # shape (batch_size * seq_len, num_labels)
-    flattened_predictions = torch.argmax(active_logits, axis=1) # shape (batch_size * seq_len,)
-            
-    # only compute accuracy at active labels
-    active_accuracy = labels.view(-1) != -100 # shape (batch_size, seq_len)
-        
-    labels = torch.masked_select(flattened_targets, active_accuracy)
-    predictions = torch.masked_select(flattened_predictions, active_accuracy)
-
-    # Change numeric tags to text format
-    tags = [ids_to_labels[id.item()] for id in labels]
-    preds = [ids_to_labels[id.item()] for id in predictions]
-
-    return tags, preds
-
-def validate(model, val_dataloader):
-    model.eval()
-
-    total_acc_val = 0
-    total_loss_val = 0
-
-    # Validation loop
-    val_preds, val_labels = [], []
-    for val_data, val_label in tqdm(val_dataloader):
-        val_label = val_label.to(device)
-        mask = val_data['attention_mask'].squeeze(1).to(device)
-        input_id = val_data['input_ids'].squeeze(1).to(device)
-        with torch.no_grad():
-            loss, logits = model(input_ids=input_id, attention_mask=mask, labels=val_label, return_dict=False)
-        labels, predictions = format_labels(val_label, logits)
-        val_labels.append(labels)
-        val_preds.append(predictions)
-        #val_labels += labels
-        #val_preds += predictions
-
-        for i in range(logits.shape[0]):
-            logits_clean = logits[i][val_label[i] != -100]
-            label_clean = val_label[i][val_label[i] != -100]
-
-            predictions = logits_clean.argmax(dim=1)
-            acc = (predictions == label_clean).float().mean()
-            total_acc_val += acc
-        
-        total_loss_val += loss.item()
-    
-    return total_loss_val, total_acc_val, val_labels, val_preds
-
-def print_accuracies(total_acc_train,total_loss_train,total_acc_val,total_loss_val, n_train, n_val, 
-                     val_acc_history, val_loss_history, tr_acc_history,tr_loss_history,epoch_num, val_labels, val_preds):
-    tr_accuracy = total_acc_train / (n_train*args.batch_size) 
-    tr_loss = total_loss_train / n_train
-    val_accuracy = total_acc_val / (n_val*args.batch_size)
-    val_loss = total_loss_val / n_val
-    
-    #writer.add_scalar("Loss/valid", val_loss, epoch_num)
-    #writer.add_scalar("Loss/train", tr_loss, epoch_num)
-    #accuracies
-    #writer.add_scalar("Accuracy/train", tr_accuracy, epoch_num)
-    #writer.add_scalar("Accuracy/valid", val_accuracy, epoch_num)
-    #f-scores
-    #writer.add_scalar("F-score/balanced", f1_score(val_labels, val_preds, average='weighted'), epoch_num)
-    
-    val_acc_history.append(val_accuracy)
-    val_loss_history.append(val_loss)
-    tr_acc_history.append(tr_accuracy)
-    tr_loss_history.append(tr_loss)
-
-    print(
-        f'Epochs: {epoch_num + 1} \
-        | Loss: {tr_loss: .3f} \
-        | Accuracy: {tr_accuracy: .3f} \
-        | Val_Loss: {val_loss: .3f} \
-        | Val_accuracy: {val_accuracy: .3f}')
-
-    print('\n')
-    print(classification_report(val_labels, val_preds, zero_division=1))
-    
-    return val_loss
-
-# Function for training the model
-def train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, epochs):
-    best_val_loss = 1000
-    epoch_n = 0
+def train_eval_loop(model, train_dataloader, val_dataloader, optimizer, scheduler):
+    """Perform model training and evaluation."""
+    n_train = len(train_dataloader)
     timestep = 0
+    best_val_f1 = 0
+    no_improvement = 0
 
     tr_acc_history = []
+    tr_loss_history = []
+    tr_f1_history = []
     val_acc_history = []
     val_loss_history = []
-    tr_loss_history = []
+    val_f1_history = []
 
-    n_train = len(train_dataloader)
-    n_val = len(val_dataloader)
-    
-    #calculate frac that is used in determining when to validate
-    frac, _ = divmod(n_train,args.num_validate_during_training)
-    
-    #tensorboard logger
-    #if not os.path.isdir(args.save_model_path):
-    #    os.makedirs(args.save_model_path)
-    #writer = SummaryWriter(args.save_model_path)
-    no_improvement = 0
-    for epoch_num in range(epochs):
-        total_acc_train = 0
-        total_loss_train = 0
+    # Load evaluation metric
+    tr_seqeval_metric = evaluate.load("seqeval")
 
-        model.train()
-        
+    # Calculate frac that is used in determining when to validate
+    frac, _ = divmod(n_train, args.num_validate_during_training)
+
+    for epoch in range(args.epochs):
+        epoch_loss_train = 0
+        epoch_loss_val = 0
+        epoch_acc_val = 0
+        epoch_f1_val = 0
+
         # Training loop
-        for b, (train_data, train_label) in enumerate(tqdm(train_dataloader)):
-            train_label = train_label.to(device)
-            mask = train_data['attention_mask'].squeeze(1).to(device)
-            input_id = train_data['input_ids'].squeeze(1).to(device)
+        model.train()
+        for i, batch in enumerate(tqdm(train_dataloader)):
+            outputs = model(**batch)
+            loss = outputs.loss
+            accelerator.backward(loss)
 
-            optimizer.zero_grad()
-            loss, logits = model(input_ids=input_id, attention_mask=mask, labels=train_label, return_dict=False)
+            # Clip gradient norm
+            accelerator.clip_grad_norm_(model.parameters(), 1.0)
 
-            for i in range(logits.shape[0]):
-                logits_clean = logits[i][train_label[i] != -100]
-                label_clean = train_label[i][train_label[i] != -100]
-
-                predictions = logits_clean.argmax(dim=1)
-                acc = (predictions == label_clean).float().mean()
-                total_acc_train += acc
-            
-            total_loss_train += loss.item()
-            loss.backward()
-            
-            # Avoids exploding gradient by doing gradient clipping
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            
             optimizer.step()
 
-            if timestep % 10 == 0:
-                    print("Epoch %d | Batch %d/%d | Timestep %d | LR %.10f | Loss %f"%(epoch_num,b,n_train,timestep,optimizer.param_groups[0]['lr'],loss.item()))
+            # Get training metrics for the current batch
+            predictions = outputs.logits.argmax(dim=-1)
+            labels = batch["labels"]
+            predictions_gathered, labels_gathered = gather_predictions(predictions, labels)
+            true_predictions, true_labels = postprocess(predictions_gathered, labels_gathered)
+            tr_seqeval_metric.add_batch(predictions=true_predictions, references=true_labels)
+
+            # Save training loss
+            epoch_loss_train += loss.item()
+
+            # Print metrics at defined intervals
+            if i % 50 == 0:
+                    print("Epoch %d | Batch %d/%d | Timestep %d | LR %.10f | Train loss %.3f"%(epoch, i, n_train, timestep, optimizer.param_groups[0]['lr'], loss.item()))
             timestep += 1
-            
-            #do validation num_validate_during_training times
-            if (b+1) % frac == 0:
-                print(f'validating on iter {b} on epoch {epoch_num}')
-                total_loss_val, total_acc_val, val_labels, val_preds = validate(model, val_dataloader)
-                val_loss = print_accuracies(total_acc_train,total_loss_train,total_acc_val,total_loss_val, n_train, n_val, 
-                            val_acc_history, val_loss_history, tr_acc_history,tr_loss_history,epoch_num, val_labels, val_preds)
 
-                # Saves model if validation accuracy improves
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
-                    #epoch_n = epoch_num
-                    print('Saving model to ', args.save_model_path)
-                    # Save trained model
-                    model.save_pretrained(args.save_model_path, from_pt=True)
-                    #epoch_n = epoch_num
-                    no_improvement = 0
-                else:
-                    no_improvement += 1
+            optimizer.zero_grad()
 
-                if no_improvement >= args.patience*args.num_validate_during_training:
-                    print('Training is aborted as validation loss has not improved')
-                    break
-            
+            # Do validation num_validate_during_training times
+            if (i + 1) % frac == 0:
+                print('\nValidating on iter %i on epoch %i'%(i, epoch))
+                val_results, val_loss = validate(model, val_dataloader)
+                epoch_acc_val += val_results["overall_accuracy"]
+                epoch_f1_val += val_results["overall_f1"]
+                epoch_loss_val += val_loss
+
             if args.linear_scheduler:
                 scheduler.step()
-        
-        if not args.linear_scheduler:    
+
+        if not args.linear_scheduler:
             scheduler.step()
 
+        # Get training metrics for epoch
+        tr_results = tr_seqeval_metric.compute(zero_division=0)
 
-    hist_dict = {'tr_acc': tr_acc_history, 
-                'val_acc': val_acc_history, 
-                'val_loss': val_loss_history,
-                'tr_loss': tr_loss_history}
+        print("\nEpoch %d | Train accuracy %.3f | Train f1 score %.3f\n"%(epoch, tr_results["overall_accuracy"], tr_results["overall_f1"]))
+
+        # Save the results of training and validation metrics
+        tr_loss_history.append(epoch_loss_train / n_train)
+        tr_acc_history.append(tr_results["overall_accuracy"])
+        tr_f1_history.append(tr_results["overall_f1"])
+        val_acc_history.append(epoch_acc_val / args.num_validate_during_training)
+        val_loss_history.append(epoch_loss_val / args.num_validate_during_training)
+        val_f1_history.append(epoch_f1_val / args.num_validate_during_training)
+
+        # Saves model if validation f1 score improves
+        if val_f1_history[-1] > best_val_f1:
+            print(f'Validation f1 score {val_f1_history[-1]} improved from {best_val_f1}.')
+            best_val_f1 = val_f1_history[-1]
+            # Save trained model
+            accelerator.wait_for_everyone()
+            unwrapped_model = accelerator.unwrap_model(model)
+            unwrapped_model.save_pretrained(args.save_model_path, save_function=accelerator.save)
+            if accelerator.is_main_process:
+                tokenizer.save_pretrained(args.save_model_path)
+            print('Model saved to ', args.save_model_path)
+            no_improvement = 0
+        else:
+            no_improvement += 1
+
+        if no_improvement >= args.patience*args.num_validate_during_training:
+            print('Training is aborted as validation f1 score has not improved')
+            break
+
+    hist_dict = {'tr_acc': tr_acc_history,
+                'tr_f1': tr_f1_history,
+                'tr_loss': tr_loss_history,
+                'val_acc': val_acc_history,
+                'val_f1': val_f1_history,
+                'val_loss': val_loss_history}
 
     return hist_dict
 
-
-# Function for evaluating trained model with test data
-def evaluate(model, test_dataloader):
+def test_model(model, dataloader):
+    """Evaluates trained model with test data."""
     test_preds, test_labels = [], []
+    eval_loss = 0
+    n_test = len(dataloader)
+
+    # Load evaluation metric
+    ts_seqeval_metric = evaluate.load("seqeval")
+    ts_seqeval_metric_wo_0 = evaluate.load("seqeval")
+
+    # Evaluation loop
     model.eval()
-    
-    eval_loss, eval_accuracy, eval_accuracy_wo_O = 0, 0, 0
-    nb_eval_steps = 0
-
-    for data, labels in tqdm(test_dataloader):
-        labels = labels.to(device)
-        mask = data['attention_mask'].squeeze(1).to(device)
-        input_id = data['input_ids'].squeeze(1).to(device)
-
+    for batch in dataloader:
         with torch.no_grad():
-            loss, logits = model(input_ids=input_id, attention_mask=mask, labels=labels, return_dict=False)
-        
+            outputs = model(**batch)
+
+        loss = outputs.loss
         eval_loss += loss.item()
 
-        nb_eval_steps += 1
+        predictions = outputs.logits.argmax(dim=-1)
+        labels = batch["labels"]
 
-        tags, predictions = format_labels(labels, logits)
-         
-        test_labels.append(tags)
-        test_preds.append(predictions)
-        
-        #find indeces to remove 'O' tags for better accuracy calculations
-        indeces_with_O =  np.where(np.array(tags)=='O')[0]
-        tmp_eval_accuracy_wo_O = accuracy_score(np.delete(tags, indeces_with_O), np.delete(predictions, indeces_with_O))
-        tmp_eval_accuracy = accuracy_score(tags, predictions)
-        
-        #check if all tags are 'O'-tags -> accuracy= nan
-        if np.isnan(tmp_eval_accuracy_wo_O):
-            eval_accuracy += tmp_eval_accuracy
-        else:
-            eval_accuracy += tmp_eval_accuracy
-            eval_accuracy_wo_O += tmp_eval_accuracy_wo_O
+        predictions_gathered, labels_gathered = gather_predictions(predictions, labels)
+        true_predictions, true_labels = postprocess(predictions_gathered, labels_gathered)
 
-    eval_loss = eval_loss / nb_eval_steps
-    eval_accuracy = eval_accuracy / nb_eval_steps
-    print(f"Test Loss: {eval_loss}")
-    print(f"Test Accuracy: {eval_accuracy}")
-    print(f"Test Accuracy w/o O-tags: {eval_accuracy_wo_O}")
-    
+        test_preds += true_predictions
+        test_labels += true_labels
+        
+        # Find indices to remove 'O' tags for better accuracy calculations
+        flat_labels = sum(true_labels, [])
+        flat_predictions = sum(true_predictions, [])
+        indices_with_O =  np.where(np.array(flat_labels, dtype=object)=='O')[0]
+        true_labels_wo_0 = np.delete(flat_labels, indices_with_O)
+        true_predictions_wo_0 = np.delete(flat_predictions, indices_with_O)
+
+        ts_seqeval_metric.add_batch(predictions=true_predictions, references=true_labels)
+        ts_seqeval_metric_wo_0.add_batch(predictions=[true_predictions_wo_0], references=[true_labels_wo_0])
+
+    # Computes metrics based on saved batch results
+    results = ts_seqeval_metric.compute(zero_division=0)
+    results_wo_0 = ts_seqeval_metric_wo_0.compute(zero_division=0)
+
+    test_loss = eval_loss / n_test
+
+    print("\nTest loss %.3f | Test precision %.3f | Test recall %.3f | Test f1 score %.3f | Test accuracy %.3f\n"%(test_loss, results['overall_precision'], results['overall_recall'], results['overall_f1'], results["overall_accuracy"]))
+    print("Test precision w/o O-tags %.3f | Test recall w/o O-tags %.3f | Test f1 score w/o O-tags %.3f | Test accuracy w/o O-tags %.3f\n"%(results_wo_0['overall_precision'], results_wo_0['overall_recall'], results_wo_0['overall_f1'], results_wo_0["overall_accuracy"]))
+
     # Reports model performance for each tag category
     print(classification_report(test_labels, test_preds, zero_division=1))
     print('\n')
@@ -421,11 +409,11 @@ def evaluate(model, test_dataloader):
 
 def plot_metrics(hist_dict):
     """Function for plotting the training and validation results."""
-    epochs = range(1, (args.epochs*args.num_validate_during_training)+1)
+    epochs = list(range(1, len(hist_dict['tr_loss'])+1))
     plt.plot(epochs, hist_dict['tr_loss'], 'g', label='Training loss')
     plt.plot(epochs, hist_dict['val_loss'], 'b', label='Validation loss')
     plt.title('Training & Validation loss')
-    plt.xlabel('Epochs*num_validate')
+    plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
     plt.savefig(args.save_model_path + '/tr_val_loss.jpg', bbox_inches='tight')
@@ -434,43 +422,40 @@ def plot_metrics(hist_dict):
     plt.plot(epochs, hist_dict['tr_acc'], 'g', label='Training accuracy')
     plt.plot(epochs, hist_dict['val_acc'], 'b', label='Validation accuracy')
     plt.title('Training & Validation accuracy')
-    plt.xlabel('Epochs*num_validate')
+    plt.xlabel('Epochs')
     plt.ylabel('Accuracy')
     plt.legend()
-    plt.savefig(args.save_model_path + '/tr_acc.jpg', bbox_inches='tight')
+    plt.savefig(args.save_model_path + '/tr_val_acc.jpg', bbox_inches='tight')
+    plt.close()
+
+    plt.plot(epochs, hist_dict['tr_f1'], 'g', label='Training F1 score')
+    plt.plot(epochs, hist_dict['val_f1'], 'b', label='Validation F1 score')
+    plt.title('Training & Validation F1 scores')
+    plt.xlabel('Epochs')
+    plt.ylabel('F1')
+    plt.legend()
+    plt.savefig(args.save_model_path + '/tr_val_f1.jpg', bbox_inches='tight')
     plt.close()
 
 
 def main():
-
-    train_dataset, _, _, train_dataloader, val_dataloader, test_dataloader = get_data(args.data_path, tokenizer)
-    freeze_bert_layers()
-    n_unique_tags = len(list(labels_to_ids.keys()))
-    test_init_loss(model, train_dataset, 55, n_unique_tags)
-    test_alignment(tokenizer, train_dataset, 55)
-
-    if args.double_lr:
-        optimizer = torch.optim.AdamW([{"params": model.bert.parameters(), "lr": args.learning_rate/10},
-                        {"params": model.classifier.parameters(), "lr": args.learning_rate}
-                        ])
-    else:
-    	#optimizer = SGD(model.parameters(), lr=args.learning_rate)
-        optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
-    if args.linear_scheduler:
-        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps = round(len(train_dataloader)/5), num_training_steps=len(train_dataloader)*args.epochs)
-    else:
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.gamma, last_epoch=-1, verbose=True)
-
-    # Train the model
-    hist_dict = train_loop(model, optimizer, scheduler, train_dataloader, val_dataloader, args.epochs)
-
-    trained_model = BertForTokenClassification.from_pretrained(args.save_model_path, num_labels=n_unique_tags)
-    trained_model.to(device)
-    
-    # Evaluate model with test data
-    evaluate(trained_model, test_dataloader)
-
+    # Get dataloaders for train, validation and test data
+    train_dataloader, val_dataloader, test_dataloader = get_data()
+    # Initialize optimizer
+    optimizer = get_optimizer(model)
+    # Optionally freezes BERT layers during training
+    freeze_bert_layers(model)
+    # Prepares the model and data for training in a distributed setup (multi-gpu), if available
+    ner_model, optimizer, train_dataloader, val_dataloader, test_dataloader = accelerator.prepare(model, optimizer, train_dataloader, val_dataloader, test_dataloader)
+    scheduler = get_scheduler_(optimizer, train_dataloader)
+    # Training and evaluation loop returns a dictionary of the metrics
+    hist_dict = train_eval_loop(ner_model, train_dataloader, val_dataloader, optimizer, scheduler)
+    # Loads the saved model using AutoModelForTokenClassification class
+    trained_model = AutoModelForTokenClassification.from_pretrained(args.save_model_path, num_labels=len(list(labels_to_ids.keys())))
+    trained_model = accelerator.prepare(trained_model)
+    # Tests the performance of the model with the test dataset
+    test_model(trained_model, test_dataloader)
+    # Plots train and validation metrics
     plot_metrics(hist_dict)
 
-    
 main()

@@ -16,7 +16,7 @@ Several model hyperparameters can be provided as arguments when running the code
 
 - data_path: Path to data files (in .csv format). Default data path is `./data/`.
 
-- save_model_path: Path where the trained model is saved. Default folder is `./checkpoint/`.
+- save_model_path: Path where the trained model and the plots of the training and evaluation metrics are saved. Default folder is `./checkpoint/`.
 
 - max_len: Maximum allowed length (in tokens) of single input text. Default value is `512`.
 

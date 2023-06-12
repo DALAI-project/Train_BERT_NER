@@ -22,7 +22,7 @@ parser.add_argument('--save_model_path', type=str, default="./checkpoint/",
                     help='path where the trained model is saved')
 parser.add_argument('--max_len', type=int, default=512,
                     help='Maximum length of data sequence.')
-parser.add_argument('--learning_rate', type=float, default=0.00002, 
+parser.add_argument('--learning_rate', type=float, default=0.0002, 
                     help='Model learning rate.')
 parser.add_argument('--gamma', type=float, default=0.8,
                     help='gamma for exponential decay')

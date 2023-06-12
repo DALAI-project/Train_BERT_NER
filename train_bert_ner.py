@@ -14,18 +14,6 @@ from seqeval.metrics import classification_report
 from datasets import Dataset, DatasetDict, load_dataset
 from transformers import AutoTokenizer, AutoModelForTokenClassification, get_scheduler, DataCollatorForTokenClassification
 
-## Running the code using accelerate
-
-# for possible parameters, see 'accelerate launch -h'
-# Run the code with all available GPUs with mixed precision disabled: 'accelerate launch --multi_gpu train_ner.py'
-# Same as above with mixed precision: 'accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes=2 train_ner.py'
-# Use only one GPU: 'accelerate launch --num_processes=1 train_ner.py'
-# Use only one GPU defined using GPU id: 'accelerate launch --num_processes=1 --gpu_ids=0 train_ner.py'
-
-# nohup accelerate launch --num_processes=1 --gpu_ids=1 train_ner.py > bert_runs/09_06_23_e10_linear_lr_b16_lr2e-5/train_log.txt 2>&1 &
-# echo $! > bert_runs/09_06_23_e10_linear_lr_b16_lr2e-5/save_pid.txt
-
-
 parser = argparse.ArgumentParser('Arguments for training BERT NER model')
 
 parser.add_argument('--data_path', type=str, default="./data/",

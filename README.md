@@ -16,6 +16,7 @@ The code in `combine_conll_files.py` combines multiple annotation files in conll
 
 The code in `train_val_test_split.py` splits the input file (in conll-format) into separate train, validation and test datasets, which are saved either as .txt or as .csv files. `save_path` sets the location for the resulting files (by default `./data/tr_val_test/`), `conll_path` defines the location of the input file (by default `conll_path`), `train_ratio` sets the ratio of the input data used for the train dataset, `val_ratio` sets the ratio of the input data used for the validation dataset (while the remainder is used for test data), `output_type` sets the file type for the output (by default `.csv`, otherwise `.txt`), and `seed` sets the seed value for the numpy random.shuffle function which is used for shuffling the data (by default `42`). 
 
+The code in `count_tags.py` counts the different types of NER tags in the input file. `conll_path` argument defines the location of the input file (by default `./data/conll-data/combined_data.txt`). 
 
 ## Model output
 

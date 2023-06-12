@@ -1,6 +1,6 @@
 # BERT NER
 
-Code for training Finnish named entity recognition (NER) model based on BERT. The Hugging Face library version of TurkuNLP's BERT is used in the implementation.
+Code for training Finnish named entity recognition (NER) model based on BERT. The Hugging Face library version of TurkuNLP's FinBERT, available at [HuggingFace](https://huggingface.co/TurkuNLP/bert-base-finnish-cased-v1), is used as the base model in the implementation.
 
 ## Model input
 

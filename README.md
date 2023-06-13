@@ -6,7 +6,7 @@ Code for training Finnish named entity recognition (NER) model based on BERT. Tu
 
 #### Create and activate conda environment using the following commands:
 
-`conda create -n ner_env python=3.7`
+`conda create -n ner_env python=3.8`
 
 `conda activate ner_env`
 

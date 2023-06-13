@@ -96,17 +96,19 @@ All parameter values can also be set on the command line with the starting comma
 
 The [Accelerate](https://huggingface.co/docs/accelerate/index) library is used for facilitating model training in a distributed setting.
 
-For running the code with all available GPUs (with mixed precision disabled), use the command 
+- For running the code with all available GPUs (with mixed precision disabled), use the command 
 `accelerate launch --multi_gpu train_bert_ner.py`
 
-Training with all available GPUs and float16 mixed precision can be initiated with 
+- Training with all available GPUs and float16 mixed precision can be initiated with 
 `accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes=2 train_ner.py`
 
-Training code can also be restricted to use only one GPU
+- Training code can also be restricted to use only one GPU:
 `accelerate launch --num_processes=1 train_ner.py`
 
-In a multi-GPU setting, the specific GPU that is used for training can be defined using GPU id 
+- In a multi-GPU setting, the specific GPU that is used for training can be defined using GPU id 
 `accelerate launch --num_processes=1 --gpu_ids=0 train_ner.py`
 
-For all possible parameters, see 
+- Run the code only with cpu (also in a GPU setting): 'accelerate launch --cpu train_ner.py'
+
+- For all possible parameters, see 
 `accelerate launch -h`

@@ -2,6 +2,18 @@
 
 Code for training Finnish named entity recognition (NER) model based on BERT. TurkuNLP's FinBERT, available at [HuggingFace](https://huggingface.co/TurkuNLP/bert-base-finnish-cased-v1), is used as the base model in the implementation.
 
+## Running the code in a virtual environment
+
+#### Create and activate conda environment using the following commands:
+
+`conda create -n ner_env python=3.7`
+
+`conda activate ner_env`
+
+#### Install dependencies listed in the requirements.txt file:
+
+`pip install -r requirements.txt`
+
 ## Input data
 
 The code in `train_bert_ner.py` expects the training, validation and test data in separate .csv files, where the first column ("tokens") contains the text content of the document as a word list, while the second column ("tags") contains a list of the corresponding NER tags in IOB (inside-outside-beginning) form. The names of the data files are expected to be `train.csv`, `val.csv` and `test.csv`.

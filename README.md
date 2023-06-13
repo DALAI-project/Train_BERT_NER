@@ -108,7 +108,7 @@ The [Accelerate](https://huggingface.co/docs/accelerate/index) library is used f
 - In a multi-GPU setting, the specific GPU that is used for training can be defined using GPU id 
 `accelerate launch --num_processes=1 --gpu_ids=0 train_ner.py`
 
-- Run the code only with cpu (also in a GPU setting): 'accelerate launch --cpu train_ner.py'
+- Run the code only with CPU (also in a GPU setting): `accelerate launch --cpu train_ner.py`
 
 - For all possible parameters, see 
 `accelerate launch -h`

@@ -20,15 +20,32 @@ The code in `train_bert_ner.py` expects the training, validation and test data i
 
 The `data_utils` folder contains several helper functions for processing the training data.
 
-- `excel_to_conll.py`: Transforms annotations in excel files into a text file in conll-format. The code expects the first column of the excel file to contain the token, and second column the corresponding NER tag. `excel_path` argument defines the folder where the excel files are located (by default `./data/excels`), while `save_path` sets the location for the resulting .txt file (by default `./data/conll-data/excel_data.txt`). 
+- `excel_to_conll.py`: Transforms annotations in excel files into a text file in conll-format. The code expects the first column of the excel file to contain the token, and second column the corresponding NER tag. 
+  -  `excel_path` argument defines the folder where the excel files are located (by default `./data/excels`)
+  -  `save_path` argument sets the location for the resulting .txt file (by default `./data/conll-data/excel_data.txt`). 
 
-- `filter_conll_tags.py`: Replaces all tags in the input file that are not included in the `labels_list` with the 'O' tag. `conll_path` argument defines the location of the input file (by default `./data/conll-data/excel_data.txt`), while `save_path` sets the location for the resulting filtered file (by default `./data/conll-data/excel-data-formatted.txt`). 
+- `filter_conll_tags.py`: Replaces all tags in the input file that are not included in the `labels_list` with the 'O' tag. 
+  - `conll_path` argument defines the location of the input file (by default `./data/conll-data/excel_data.txt`)
+  - `save_path` argument sets the location for the resulting filtered file (by default `./data/conll-data/excel-data-formatted.txt`). 
 
-- `combine_conll_files.py`: Combines multiple annotation files in conll-format into one output file. `l` argument defines the locations of the input files (for instance `python combine_conll_files.py -l ./data/conll-data/file1.txt -l ./data/conll-data/file2.txt`), while `save_path` sets the location for the resulting file (by default `./data/conll-data/combined_data.txt`). 
+- `combine_conll_files.py`: Combines multiple annotation files in conll-format into one output file. 
+  - `l` argument defines the locations of the input files (for instance `python combine_conll_files.py -l ./data/conll-data/file1.txt -l ./data/conll-data/file2.txt`) 
+  - `save_path` argument sets the location for the resulting file (by default `./data/conll-data/combined_data.txt`). 
 
-- `train_val_test_split.py`: Splits the input file (in conll-format) into separate train, validation and test datasets, which are saved either as .txt or as .csv files. `save_path` sets the location for the resulting files (by default `./data/tr_val_test/`), `conll_path` defines the location of the input file (by default `conll_path`), `train_ratio` sets the ratio of the input data used for the train dataset, `val_ratio` sets the ratio of the input data used for the validation dataset (while the remainder is used for test data), `output_type` sets the file type for the output (by default `.csv`, otherwise `.txt`), and `seed` sets the seed value for the numpy random.shuffle function which is used for shuffling the data (by default `42`). 
+- `train_val_test_split.py`: Splits the input file (in conll-format) into separate train, validation and test datasets, which are saved either as .txt or as .csv files. 
+  - `save_path` argument sets the location for the resulting files (by default `./data/tr_val_test/`)
+  - `conll_path` argument defines the location of the input file (by default `conll_path`)
+  - `train_ratio` argument sets the ratio of the input data used for the train dataset
+  - `val_ratio` argument sets the ratio of the input data used for the validation dataset (while the remainder is used for test data)
+  - `output_type` argument sets the file type for the output (by default `.csv`, otherwise `.txt`)
+  - `seed` argument sets the seed value for the numpy random.shuffle function which is used for shuffling the data (by default `42`). 
 
-- `count_tags.py`: Counts the different types of NER tags in the input file. `conll_path` argument defines the location of the input file (by default `./data/conll-data/combined_data.txt`). 
+- `count_tags.py`: Counts the different types of NER tags in the input file. 
+  - `conll_path` argument defines the location of the input file (by default `./data/conll-data/combined_data.txt`). 
+
+- `model_to_onnx.py`: Transforms a trained model into .onnx format (find more information [here](https://huggingface.co/docs/optimum/main/en/exporters/onnx/usage_guides/export_a_model#export-a-model-to-onnx-with-optimumexportersonnx)).
+  - `checkpoint_path` argument defines the folder where the model file is located
+  - `onnx_path` argument sets the location for the transformed .onnx model.
 
 ## Model output
 

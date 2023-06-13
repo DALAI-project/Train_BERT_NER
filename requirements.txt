@@ -1,9 +1,12 @@
-transformers==4.24.0
-torch==2.0.0
-torchtext==0.15.1
-numpy==1.23.3
-scikit-learn==1.2.2
-tqdm==4.65.0
+optimum[exporters] == 1.8.7
+torch==1.13.1                  
+torchvision==0.14.1           
+tqdm==4.65.0 
+transformers==4.26.1 
+pandas==2.0.1
+numpy==1.24.3
+accelerate==0.19.0
 matplotlib==3.7.1
 seqeval==1.2.2
-pandas==1.4.4
+evaluate==0.4.0
+datasets==2.12.0

@@ -86,6 +86,6 @@ def train_dev_test(input_path, output_path, train_ratio, val_ratio):
         save_txt(datasets, names)
 
 def main():
-    train_dev_test(args.input_path, args.save_path, args.train_ratio, args.val_test_ratio)
+    train_dev_test(args.conll_path, args.save_path, args.train_ratio, args.val_ratio)
 
 main()

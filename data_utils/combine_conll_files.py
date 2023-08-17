@@ -21,6 +21,6 @@ def combine_conll_files(output_path, input_paths):
 
 
 def main():
-    combine_conll_files(args.save_path, args.l)
+    combine_conll_files(args.save_path, args.list)
 
 main()

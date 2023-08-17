@@ -132,3 +132,4 @@ dmypy.json
 *.ipynb
 
 results/*.jpg
+data_utils/data/

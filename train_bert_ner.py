@@ -24,6 +24,8 @@ parser.add_argument('--learning_rate', type=float, default=0.0002,
                     help='Model learning rate.')
 parser.add_argument('--gamma', type=float, default=0.8,
                     help='gamma for exponential decay')
+parser.add_argument('--wd', type=float, default=0.01,
+                    help='parameter defining the size of weight decay')
 parser.add_argument('--epochs', type=int, default=10,
                     help='Number of training epochs.')
 parser.add_argument('--batch_size', type=int, default=16,
@@ -197,9 +199,9 @@ def get_optimizer(model):
         optimizer = torch.optim.AdamW(
             [{"params": model.bert.parameters(), "lr": args.learning_rate/10},
             {"params": model.classifier.parameters(), "lr": args.learning_rate}
-            ])
+            ], weight_decay=args.wd)
     else:
-        optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.wd)
 
     return optimizer
 

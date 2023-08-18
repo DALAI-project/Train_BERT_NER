@@ -65,6 +65,8 @@ Several model hyperparameters can be provided as arguments when running the code
 
 - **gamma**: Defines learning rate decay in the exponential learning rate scheduler. Default value is `0.8`.
 
+- **wd**: Defines weight decay value passed to the AdamW optimizer. Default value is `0.01`.
+
 - **epochs**: Number of training epochs. Default value is `10`.
 
 - **batch_size**: Size of the data batch. Default batch size is `16`.
@@ -82,7 +84,7 @@ learning_rate defines the lr for the classification layers, while the lr for the
 
 - **num_validate_during_training**: Defines how many times the model is evaluated with validation data during training epoch. Default value is `1`.
 
-- **linear_scheduler**: Defines whether linear or exponential learning rate scheduler is used. Default value is `True`.
+- **scheduler**: Defines whether linear learning rate scheduler (`linear`), exponential learning rate scheduler (`exponential`) or no scheduler (`None`) is used. Default value is `linear`.
 
 If default values for the parameters are used, training can be started with
 

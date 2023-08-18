@@ -9,8 +9,10 @@ parser = argparse.ArgumentParser('Arguments for the code')
 
 parser.add_argument('--conll_path', type=str, default="./data/conll-data/excel_data.txt",
                     help='path to input data')
-parser.add_argument('--save_path', type=str, default="./data/conll-data/excel-data-formatted.txt",
+parser.add_argument('--save_path', type=str, default="./data/formatted/",
                     help='path for output data')
+parser.add_argument('--name', type=str, default="excel-data-formatted.txt",
+                    help='file name for output data')
 
 args = parser.parse_args()
 
@@ -33,7 +35,9 @@ labels_dict = {'O':'O',
 labels_list = list(labels_dict.keys())
 
 # Removes extra tags from conll data
-def filter_tags(conll_path, save_path):
+def filter_tags(conll_path, name, save_path):
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
     file_ = open(conll_path, 'r')
     _, file_extension = os.path.splitext(conll_path)
     # If input file is .tsv, line is split by \t, and if input is .txt file, line is split by space
@@ -41,7 +45,7 @@ def filter_tags(conll_path, save_path):
     lines = file_.readlines()
     tokens = 0
     replaced_tokens = 0
-    with open(save_path, 'w') as f:
+    with open(save_path + name, 'w') as f:
         for i, line in enumerate(lines):
             if line != '\n':
                 split_line = line.split(split_sign)
@@ -60,6 +64,7 @@ def filter_tags(conll_path, save_path):
     print('Number of replaced tokens: ', replaced_tokens)
 
 def main():
-    filter_tags(args.conll_path, args.save_path)
+    filter_tags(args.conll_path, args.name, args.save_path)
 
 main()
+

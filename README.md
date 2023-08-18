@@ -27,7 +27,8 @@ The `data_utils` folder contains several helper functions for processing the tra
 
 - **filter_conll_tags.py**: Replaces all tags in the input file that are not included in the `labels_list` with the 'O' tag. 
   - `conll_path` argument defines the location of the input file (by default `./data/conll-data/excel_data.txt`)
-  - `save_path` argument sets the location for the resulting filtered file (by default `./data/conll-data/excel-data-formatted.txt`). 
+  - `save_path` argument sets the location for the resulting filtered file (by default `./data/conll-data/`). If the folder does not exist, it is created by the code.
+  - `name` argument sets the name of the resulting file (by default `excel-data-formatted.txt`)
 
 - **combine_conll_files.py**: Combines multiple annotation files in conll-format into one output file. 
   - `l` argument defines the locations of the input files (for instance `python combine_conll_files.py -l ./data/conll-data/file1.txt -l ./data/conll-data/file2.txt`) 

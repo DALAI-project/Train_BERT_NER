@@ -36,7 +36,7 @@ The `data_utils` folder contains several helper functions for processing the tra
   - `name` argument sets the name of the resulting file (by default `combined_data.txt`)
 
 - **train_val_test_split.py**: Splits the input file (in conll-format) into separate train, validation and test datasets, which are saved either as .txt or as .csv files. 
-  - `save_path` argument sets the location for the resulting files (by default `./data/tr_val_test/`)
+  - `save_path` argument sets the location for the resulting files (by default `./data/tr_val_test/`). If the folder does not exist, it is created by the code.
   - `conll_path` argument defines the location of the input file (by default `conll_path`)
   - `train_ratio` argument sets the ratio of the input data used for the train dataset
   - `val_ratio` argument sets the ratio of the input data used for the validation dataset (while the remainder is used for test data)

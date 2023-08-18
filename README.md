@@ -22,7 +22,8 @@ The `data_utils` folder contains several helper functions for processing the tra
 
 - **excel_to_conll.py**: Transforms annotations in excel files into a text file in conll-format. The code expects the first column of the excel file to contain the token, and second column the corresponding NER tag. 
   -  `excel_path` argument defines the folder where the excel files are located (by default `./data/excels`)
-  -  `save_path` argument sets the location for the resulting .txt file (by default `./data/conll-data/excel_data.txt`). 
+  -  `save_path` argument sets the location for the resulting .txt file (by default `./data/conll-data/`). If the folder does not exist, it is created by the code.
+  -  `name` argument sets the name of the resulting file (by default `excel_data.txt`)
 
 - **filter_conll_tags.py**: Replaces all tags in the input file that are not included in the `labels_list` with the 'O' tag. 
   - `conll_path` argument defines the location of the input file (by default `./data/conll-data/excel_data.txt`)

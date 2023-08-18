@@ -102,7 +102,7 @@ The [Accelerate](https://huggingface.co/docs/accelerate/index) library is used f
 `accelerate launch --multi_gpu train_bert_ner.py`
 
 - Training with all available GPUs and float16 mixed precision can be initiated with 
-`accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes=2 train_bert_ner.py`
+`accelerate launch --multi_gpu --mixed_precision=fp16 train_bert_ner.py`
 
 - Training code can also be restricted to use only one GPU:
 `accelerate launch --num_processes=1 train_ner.py`

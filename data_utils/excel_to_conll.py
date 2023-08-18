@@ -9,8 +9,10 @@ parser = argparse.ArgumentParser('Arguments for the code')
 
 parser.add_argument('--excel_path', type=str, default="./data/excels",
                     help='path to excel files')
-parser.add_argument('--save_path', type=str, default="./data/conll-data/excel_data.txt",
+parser.add_argument('--save_path', type=str, default="./data/conll-data/",
                     help='path for saving conll file')
+parser.add_argument('--name', type=str, default="excel_data.txt",
+                    help='name of the conll file')
 
 args = parser.parse_args()
 
@@ -33,11 +35,14 @@ labels_dict = {'O':'O',
 labels_list = list(labels_dict.keys())
 
 # Creates a conll-type text file from multiple excel files
-def excel2conll(excel_path, output_path):
+def excel2conll(excel_path, name, output_path):
     # Get list of input file paths
     path = Path(excel_path)
     input_files = list(path.rglob('*.xlsx'))
     print(len(input_files), ' input files')
+
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
 
     tokens = list()
     # transform each .xlsx file separately
@@ -69,12 +74,12 @@ def excel2conll(excel_path, output_path):
     num_segments = sum([1 for token in tokens if not token])
     print("Found %d segments and %d tokens"%(num_segments + 1, len(tokens) - num_segments))
 
-    with open(output_path, "w") as fh:
+    with open(output_path + name, "w") as fh:
         fh.write("\n".join(" ".join(token) for token in tokens))
 
-    print('File was saved to ', output_path)
+    print('File was saved to ', output_path + name)
 
 def main():
-    excel2conll(args.excel_path, args.save_path)
+    excel2conll(args.excel_path, args.name, args.save_path)
 
 main()

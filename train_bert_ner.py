@@ -61,7 +61,7 @@ ids_to_labels = {v: k for k, v in labels_to_ids.items()}
 tokenizer = AutoTokenizer.from_pretrained("TurkuNLP/bert-base-finnish-cased-v1")
 # Collator used for building data batches
 data_collator = DataCollatorForTokenClassification(tokenizer=tokenizer)
-model = AutoModelForTokenClassification.from_pretrained("TurkuNLP/bert-base-finnish-cased-v1", id2label=ids_to_labels, label2id=labels_to_ids)
+bert_model = AutoModelForTokenClassification.from_pretrained("TurkuNLP/bert-base-finnish-cased-v1", id2label=ids_to_labels, label2id=labels_to_ids)
 # Initialize Accelerator instance
 accelerator = Accelerator()
 
@@ -153,6 +153,7 @@ def postprocess(predictions, labels):
     return true_predictions, true_labels
 
 def gather_predictions(predictions, labels):
+    """Helper function for accelerator."""
     # Necessary to pad predictions and labels for being gathered
     predictions = accelerator.pad_across_processes(predictions, dim=1, pad_index=-100)
     labels = accelerator.pad_across_processes(labels, dim=1, pad_index=-100)
@@ -432,11 +433,11 @@ def main():
     # Get dataloaders for train, validation and test data
     train_dataloader, val_dataloader, test_dataloader = get_data()
     # Initialize optimizer
-    optimizer = get_optimizer(model)
+    optimizer = get_optimizer(bert_model)
     # Optionally freezes BERT layers during training
-    freeze_bert_layers(model)
+    freeze_bert_layers(bert_model)
     # Prepares the model and data for training in a distributed setup (multi-gpu), if available
-    ner_model, optimizer, train_dataloader, val_dataloader, test_dataloader = accelerator.prepare(model, optimizer, train_dataloader, val_dataloader, test_dataloader)
+    ner_model, optimizer, train_dataloader, val_dataloader, test_dataloader = accelerator.prepare(bert_model, optimizer, train_dataloader, val_dataloader, test_dataloader)
     scheduler = get_scheduler_(optimizer, train_dataloader)
     # Training and evaluation loop returns a dictionary of the metrics
     hist_dict = train_eval_loop(ner_model, train_dataloader, val_dataloader, optimizer, scheduler)

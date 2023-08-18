@@ -86,6 +86,8 @@ def train_dev_test(input_path, output_path, train_ratio, val_ratio):
         save_txt(datasets, names)
 
 def main():
+    if not os.path.exists(args.save_path):
+        os.makedirs(args.save_path)
     train_dev_test(args.conll_path, args.save_path, args.train_ratio, args.val_ratio)
 
 main()

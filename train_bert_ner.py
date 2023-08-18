@@ -42,8 +42,8 @@ parser.add_argument('--classifier_dropout', type=float, default=None,
                     help='Dropout value for classifier layer')
 parser.add_argument('--num_validate_during_training', type=int, default=1,
                     help='How many times to validate during training. Default is 1=at the last step.')
-parser.add_argument('--linear_scheduler', action='store', type=bool, required=False, default=True, 
-                    help='Whether to use linear or exponential scheduler.')
+parser.add_argument('--scheduler', action='store', type=str, required=False, default='linear', 
+                    help='Whether to use scheduler')
 
 args = parser.parse_args()
 
@@ -206,16 +206,18 @@ def get_optimizer(model):
     return optimizer
 
 def get_scheduler_(optimizer, train_dataloader):
-    """Returns linear or exponential scheduler."""
-    if args.linear_scheduler:
+    """Returns scheduler if specified in the --scheduler argument."""
+    if args.scheduler == 'linear':
         scheduler = get_scheduler(
                     "linear",
                     optimizer=optimizer,
                     num_warmup_steps=round(len(train_dataloader)/5),
                     num_training_steps=len(train_dataloader)*args.epochs,
                     )
-    else:
+    elif args.scheduler == 'exponential':
         scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.gamma, last_epoch=-1, verbose=True)
+    else:
+        scheduler = None
 
     return scheduler
 
@@ -296,10 +298,10 @@ def train_eval_loop(model, train_dataloader, val_dataloader, optimizer, schedule
                 epoch_f1_val += val_results["overall_f1"]
                 epoch_loss_val += val_loss
 
-            if args.linear_scheduler:
+            if scheduler and args.scheduler=='linear':
                 scheduler.step()
 
-        if not args.linear_scheduler:
+        if scheduler and args.scheduler=='exponential':
             scheduler.step()
 
         # Get training metrics for epoch

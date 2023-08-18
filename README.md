@@ -30,7 +30,8 @@ The `data_utils` folder contains several helper functions for processing the tra
 
 - **combine_conll_files.py**: Combines multiple annotation files in conll-format into one output file. 
   - `l` argument defines the locations of the input files (for instance `python combine_conll_files.py -l ./data/conll-data/file1.txt -l ./data/conll-data/file2.txt`) 
-  - `save_path` argument sets the location for the resulting file (by default `./data/conll-data/combined_data.txt`). 
+  - `save_path` argument sets the location for the resulting file (by default `./data/conll-data/`). If the folder does not exist, it is created by the code.
+  - `name` argument sets the name of the resulting file (by default `combined_data.txt`)
 
 - **train_val_test_split.py**: Splits the input file (in conll-format) into separate train, validation and test datasets, which are saved either as .txt or as .csv files. 
   - `save_path` argument sets the location for the resulting files (by default `./data/tr_val_test/`)

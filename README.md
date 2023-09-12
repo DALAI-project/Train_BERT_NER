@@ -64,7 +64,7 @@ Several model hyperparameters can be provided as arguments when running the code
 
 - **max_len**: Maximum allowed length (in tokens) of single input text. Default value is `512`.
 
-- **learning_rate**: Learning rate for model training. Default value is `0.0002`.
+- **learning_rate**: Learning rate for model training. Default value is `0.00002`.
 
 - **gamma**: Defines learning rate decay in the exponential learning rate scheduler. Default value is `0.8`.
 
@@ -72,7 +72,7 @@ Several model hyperparameters can be provided as arguments when running the code
 
 - **epochs**: Number of training epochs. Default value is `10`.
 
-- **batch_size**: Size of the data batch. Default batch size is `16`.
+- **batch_size**: Size of the data batch. Default batch size is `24`.
 
 - **num_workers**: Number of workers used for the data loaders. Default value is `4`.
 
@@ -83,7 +83,7 @@ Several model hyperparameters can be provided as arguments when running the code
 - **double_lr**: Defines whether different learning rates are used for the BERT layer and classification layer weights. If set to True, 
 learning_rate defines the lr for the classification layers, while the lr for the BERT layers is lr / 10. Default value is `False`.
 
-- **classifier_dropout**: Sets the dropout value for the classification layers. Default value is `None`.
+- **classifier_dropout**: Sets the dropout value for the classification layers. Default value is `0.3`.
 
 - **num_validate_during_training**: Defines how many times the model is evaluated with validation data during training epoch. Default value is `1`.
 

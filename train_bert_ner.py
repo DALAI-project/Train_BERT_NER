@@ -20,7 +20,7 @@ parser.add_argument('--save_model_path', type=str, default="./checkpoint/",
                     help='path where the trained model is saved')
 parser.add_argument('--max_len', type=int, default=512,
                     help='Maximum length of data sequence.')
-parser.add_argument('--learning_rate', type=float, default=0.0002, 
+parser.add_argument('--learning_rate', type=float, default=0.00002, 
                     help='Model learning rate.')
 parser.add_argument('--gamma', type=float, default=0.8,
                     help='gamma for exponential decay')
@@ -28,7 +28,7 @@ parser.add_argument('--wd', type=float, default=0.01,
                     help='parameter defining the size of weight decay')
 parser.add_argument('--epochs', type=int, default=10,
                     help='Number of training epochs.')
-parser.add_argument('--batch_size', type=int, default=16,
+parser.add_argument('--batch_size', type=int, default=24,
                     help='Size of data batch.')
 parser.add_argument('--num_workers', type=int, default=4,
                     help='Number of workers used for the data loaders.')
@@ -38,7 +38,7 @@ parser.add_argument('--freeze_layers', type=int, default=0,
                     help='Number of BERT layers frozen during training.')
 parser.add_argument('--double_lr', action='store', type=bool, required=False, default=False, 
                     help='Whether to use different learning rates for feature and classifier parts of the model.')
-parser.add_argument('--classifier_dropout', type=float, default=None,
+parser.add_argument('--classifier_dropout', type=float, default=0.3,
                     help='Dropout value for classifier layer')
 parser.add_argument('--num_validate_during_training', type=int, default=1,
                     help='How many times to validate during training. Default is 1=at the last step.')
